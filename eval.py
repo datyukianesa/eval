@@ -1,4 +1,3 @@
-%%writefile evaluate_script.py
 import cv2
 import json
 import torch
