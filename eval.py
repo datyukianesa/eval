@@ -1,16 +1,17 @@
+%%writefile evaluate_script.py
 import cv2
 import json
 import torch
 import pandas as pd
 import numpy as np
 from pathlib import Path
-import argparse
+import argparse 
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 from skimage.metrics import structural_similarity as compare_ssim
 import lpips
 
 # ==========================================
-# BLOCK 1: METRIC CALCULATORS (Keep these exactly the same)
+# BLOCK 1: METRIC CALCULATORS
 # ==========================================
 def calculate_psnr(gt_img, pred_img):
     return compare_psnr(gt_img, pred_img, data_range=255)
@@ -30,7 +31,7 @@ def calculate_lpips(gt_img, pred_img, lpips_model, device):
     return distance.item()
 
 # ==========================================
-# BLOCK 2: MASTER PIPELINE (Now accepts arguments)
+# BLOCK 2: MASTER PIPELINE
 # ==========================================
 def run_evaluation(dataset_path, annotations_path, output_csv_name):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -38,10 +39,8 @@ def run_evaluation(dataset_path, annotations_path, output_csv_name):
     lpips_vgg = lpips.LPIPS(net='vgg').to(device)
     lpips_vgg.eval()
 
-    # Convert the string arguments into Path objects
     dataset_dir = Path(dataset_path)
     annotations_dir = Path(annotations_path)
-    
     results = []
     count = 0
 
@@ -57,13 +56,21 @@ def run_evaluation(dataset_path, annotations_path, output_csv_name):
             film_path = folder / "frame2_film.png"
             json_path = annotations_dir / folder_name / f"{folder_name}.json"
 
-            if gt_path.exists() and json_path.exists():
-                with open(json_path, 'r') as f:
-                    ann_data = json.load(f)
+            if gt_path.exists():
                 
-                difficulty = ann_data.get("level", -1) 
-                motion_type = ann_data.get("general_motion_type", "Unknown")
-                behavior = ann_data.get("behavior", "Unknown")
+                difficulty = "N/A"
+                motion_type = "Custom_Test"
+                behavior = "Custom_Test"
+
+                if json_path.exists():
+                    try:
+                        with open(json_path, 'r') as f:
+                            ann_data = json.load(f)
+                        difficulty = ann_data.get("level", "N/A") 
+                        motion_type = ann_data.get("general_motion_type", "Unknown")
+                        behavior = ann_data.get("behavior", "Unknown")
+                    except Exception as e:
+                        print(f"Warning: Could not read JSON for {folder_name}: {e}")
 
                 gt_img = cv2.imread(str(gt_path))
 
@@ -74,6 +81,7 @@ def run_evaluation(dataset_path, annotations_path, output_csv_name):
                     "behavior": behavior
                 }
 
+                # 4. Evaluate Available Models
                 if anime_path.exists():
                     anime_img = cv2.imread(str(anime_path))
                     row_data["AnimeInterp_PSNR"] = calculate_psnr(gt_img, anime_img)
@@ -108,13 +116,9 @@ def run_evaluation(dataset_path, annotations_path, output_csv_name):
 # ==========================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Dynamic VFI Evaluation Script")
-    
-    # Define the arguments. We set defaults so it won't crash if you forget to pass them.
     parser.add_argument('--dataset_dir', type=str, default="/content/atd_12k_trim/test_2k_540p", help="Path to the inferenced dataset folder")
     parser.add_argument('--annotations_dir', type=str, default="/content/atd_12k_trim/test_2k_annotations", help="Path to the JSON annotations folder")
     parser.add_argument('--output_csv', type=str, default="Master_VFI_Evaluation_Results.csv", help="Name of the output CSV file")
     
     args = parser.parse_args()
-    
-    # Pass the parsed arguments directly into the master pipeline
     run_evaluation(args.dataset_dir, args.annotations_dir, args.output_csv)
